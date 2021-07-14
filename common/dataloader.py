@@ -4,7 +4,7 @@ from common.misc import *
 
 
 class Data:
-    def __init__(self, npz_path, transforms=None, train=True, action=None):
+    def __init__(self, npz_path, train=True, action=None):
         self.img_path = []
         self.gt_pts2d = []
         self.gt_pts3d = []
