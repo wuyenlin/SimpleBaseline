@@ -17,8 +17,8 @@ parser = argparse.ArgumentParser("Set SimpleBaseline parameters", add_help=False
 
 # Hyperparameters
 parser.add_argument("--start_epoch", type=int, default=0)
-parser.add_argument("--epoch", type=int, default=64)
-parser.add_argument("--bs", type=int, default=2)
+parser.add_argument("--epoch", type=int, default=200)
+parser.add_argument("--bs", type=int, default=64)
 parser.add_argument("--num_layers", type=int, default=2)
 parser.add_argument("--lr", type=float, default=1e-03)
 parser.add_argument("--weight_decay", type=float, default=1e-05)
@@ -122,7 +122,6 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer
             plt.savefig("./checkpoint/loss_3d.png")
 
             plt.close("all")
-
 
     print("Finished Training.")
     return losses_3d_train , losses_3d_valid
