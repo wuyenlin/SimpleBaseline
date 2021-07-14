@@ -3,7 +3,7 @@ import torch.nn as nn
 
 def weight_init(m):
     if isinstance(m, nn.Linear):
-        nn.init.kaiming_normal(m.weight)
+        nn.init.kaiming_normal_(m.weight)
 
 
 class Linear(nn.Module):
@@ -85,5 +85,6 @@ if __name__ == "__main__":
     import torch
     model = LinearModel()
     model = model.cuda()
+    model.apply(weight_init)
     a = torch.rand(2,17,2).cuda()
     print(model(a).shape)
