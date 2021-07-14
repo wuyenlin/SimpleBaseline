@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import torch.nn as nn
 
 
@@ -10,7 +8,7 @@ def weight_init(m):
 
 class Linear(nn.Module):
     def __init__(self, linear_size, p_dropout=0.5):
-        super(Linear, self).__init__()
+        super().__init__()
         self.l_size = linear_size
 
         self.relu = nn.ReLU(inplace=True)
@@ -43,15 +41,13 @@ class LinearModel(nn.Module):
                  linear_size=1024,
                  num_stage=2,
                  p_dropout=0.5):
-        super(LinearModel, self).__init__()
+        super().__init__()
 
         self.linear_size = linear_size
         self.p_dropout = p_dropout
         self.num_stage = num_stage
 
-        # 2d joints
         self.input_size =  17 * 2
-        # 3d joints
         self.output_size = 17 * 3
 
         # process input to linear size
@@ -69,8 +65,8 @@ class LinearModel(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(self.p_dropout)
 
+
     def forward(self, x):
-        # pre-processing
         y = self.w1(x.flatten(1).float())
         y = self.batch_norm1(y)
         y = self.relu(y)
