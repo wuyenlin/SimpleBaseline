@@ -6,12 +6,11 @@ from common.dataloader import *
 import torch
 import argparse
 from tqdm import tqdm
-from torchvision import transforms
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from time import time
 
-parser = argparse.ArgumentParser("Set PEBRT parameters", add_help=False)
+parser = argparse.ArgumentParser("Set SimpleBaseline parameters", add_help=False)
 
 # Hyperparameters
 parser.add_argument("--start_epoch", type=int, default=0)
@@ -32,41 +31,8 @@ parser.add_argument("--export_training_curves", action="store_true", help="Save 
 parser.add_argument("--dataset", type=str, default="./h36m/data_h36m_frame_all.npz")
 parser.add_argument("--device", default="cuda", help="device used")
 parser.add_argument("--resume", type=str, default=None, help="Loading model checkpoint")
-parser.add_argument("--distributed", action="store_true")
-
-# SLI
-parser.add_argument("--local_rank", type=int, help="local rank")
-parser.add_argument("--random_seed", type=int, help="random seed", default=0)
 
 args = parser.parse_args()
-
-
-class AverageMeter(object):
-    def __init__(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-
-def lr_decay(optimizer, step, lr, decay_step, gamma):
-    lr = lr * gamma ** (step/decay_step)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-    return lr
-
-
-transforms = transforms.Compose([
-    transforms.Resize([256,256]),
-    transforms.ToTensor(),  
-    transforms.Normalize(mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]),
-])
 
 
 def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion, optimizer, lr_scheduler):
@@ -74,8 +40,6 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
 
     losses_3d_train = []
     losses_3d_valid = []
-    losses = AverageMeter()
-    val_losses = AverageMeter()
 
     for ep in tqdm(range(start_epoch, epoch+1)):
         start_time = time()
@@ -100,11 +64,9 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
             inputs_3d = inputs_3d.to(device)
 
             optimizer.zero_grad()
-
             predicted_3d = model(inputs_2d)
 
             loss = criterion(predicted_3d.float(), inputs_3d.float())
-            losses.update(loss.item(), inputs_2d.size(0))
             epoch_loss_3d_train += inputs_3d.shape[0] * loss.item()
             N += inputs_2d.shape[0]
 
@@ -127,8 +89,6 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
                 predicted_3d = model(inputs_2d)
 
                 loss = criterion(predicted_3d.float(), inputs_3d.float())
-                val_losses.update(loss.item(), inputs_2d.size(0))
-
                 epoch_loss_3d_valid += inputs_3d.shape[0] * loss.item()
                 N += inputs_3d.shape[0]
 
