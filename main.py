@@ -2,6 +2,9 @@
 
 from common.model import *
 from common.dataloader import *
+from common.human import *
+from common.misc import *
+from common.loss import *
 
 import torch
 import argparse
@@ -35,7 +38,7 @@ parser.add_argument("--resume", type=str, default=None, help="Loading model chec
 args = parser.parse_args()
 
 
-def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion, optimizer, lr_scheduler):
+def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer, lr_scheduler):
     print("Training starts...")
 
     losses_3d_train = []
@@ -66,7 +69,7 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
             optimizer.zero_grad()
             predicted_3d = model(inputs_2d)
 
-            loss = criterion(predicted_3d.float(), inputs_3d.float())
+            loss = mpjpe(predicted_3d, inputs_3d)
             epoch_loss_3d_train += inputs_3d.shape[0] * loss.item()
             N += inputs_2d.shape[0]
 
@@ -85,10 +88,11 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
             for data in val_loader:
                 _, inputs_2d, inputs_3d = data
                 inputs_2d = inputs_2d.to(device)
+                inputs_3d = inputs_3d.to(device)
 
                 predicted_3d = model(inputs_2d)
 
-                loss = criterion(predicted_3d.float(), inputs_3d.float())
+                loss = mpjpe(predicted_3d, inputs_3d)
                 epoch_loss_3d_valid += inputs_3d.shape[0] * loss.item()
                 N += inputs_3d.shape[0]
 
@@ -126,48 +130,46 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, criterion
 
 def evaluate(test_loader, model, device):
     epoch_loss_e0 = 0.0
-    epoch_loss_n1 = 0.0
     epoch_loss_n2 = 0.0
 
     with torch.no_grad():
         N = 0
         for data in test_loader:
-            _, inputs_2d, inputs_3d, vec_3d = data
+            _, inputs_2d, inputs_3d = data
             inputs_2d = inputs_2d.to(device)
             inputs_3d = inputs_3d.to(device)
-            vec_3d = vec_3d.to(device)
 
-            predicted_3d_pos, _ = model(inputs_2d)
+            predicted_3d_pos = model(inputs_2d)
+            e0 = mpjpe(predicted_3d_pos, inputs_3d)
 
-            pose_stack = torch.zeros(predicted_3d_pos.size(0),17,3)
-            for b in range(predicted_3d_pos.size(0)):
-                h = Human(1.8, "cpu")
-                pose_stack[b] = h.update_pose(predicted_3d_pos[b].detach().cpu().numpy())
-            e0 = mpjpe(pose_stack, inputs_3d)
-            n1 = maev(predicted_3d_pos, vec_3d)
+            h = Human(1.8, "cpu")
+            model = h.update_pose()
+            t_info = vectorize(model)[:,:3]
+            pred = torch.zeros(predicted_3d_pos.size(0), 16, 9)
+            tar = torch.zeros(inputs_3d.size(0), 16, 9)
+            assert pred.shape == tar.shape
+            for pose in range(predicted_3d_pos.size(0)):
+                pred[pose,:,:] = torch.from_numpy(convert_gt(predicted_3d_pos[pose,:,:], t_info))
+                tar[pose,:,:] = torch.from_numpy(convert_gt(inputs_3d[pose,:,:], t_info))
             n2 = mpbve(predicted_3d_pos, vec_3d, 0)
             
-            epoch_loss_e0 += vec_3d.shape[0] * e0.item()
-            epoch_loss_n1 += vec_3d.shape[0] * n1.item()
-            epoch_loss_n2 += vec_3d.shape[0] * n2.item()
-            N += vec_3d.shape[0]
+            epoch_loss_e0 += inputs_3d.shape[0] * e0.item()
+            epoch_loss_n2 += inputs_3d.shape[0] * n2.item()
+            N += inputs_3d.shape[0]
 
             e0 = (epoch_loss_e0 / N)*1000
-            n1 = epoch_loss_n1 / N
             n2 = (epoch_loss_n2 / N)*1000
 
-    print("Protocol #0 Error (MPJPE):\t", e0, "\t(mm)")
-    print("New Metric #1 Error (MAEV):\t", n1)
-    print("New Metric #2 Error (MPBVE):\t", n2, "\t(mm)")
+    print("Mean Per Joint Position Error (MPJPE):\t", e0, "\t(mm)")
+    print("Mean Per Bone Vector Error (MPBVE):\t", n2, "\t(mm)")
     print("----------")
     
-    return e0, n1, n2
+    return e0, n2
 
 
 def run_evaluation(model, actions=None):
     """ Evalution on Human3.6M dataset """
     error_e0 = []
-    errors_n1 = []
     errors_n2 = []
     if actions is not None:
         # evaluting on h36m
@@ -179,12 +181,10 @@ def run_evaluation(model, actions=None):
             test_loader = DataLoader(test_dataset, batch_size=512, drop_last=True, shuffle=False, \
                                     num_workers=args.num_workers, collate_fn=collate_fn)
             print("-----"+action+"-----")
-            e0, n1, n2 = evaluate(test_loader, model, args.device)
+            e0, n2 = evaluate(test_loader, model, args.device)
             error_e0.append(e0)
-            errors_n1.append(n1)
             errors_n2.append(n2)
         print("Protocol #1   (MPJPE) action-wise average:", round(np.mean(error_e0), 1), "(mm)")
-        print("New Metric #1   (MAEV) action-wise average:", round(np.mean(errors_n1), 1), "-")
         print("New Metric #2   (MPBVE) action-wise average:", round(np.mean(errors_n2), 1), "(mm)")
 
 
@@ -210,15 +210,14 @@ def main(args):
         run_evaluation(model, actions)
 
     else:
-        train_dataset = Data(args.dataset, transforms)
+        train_dataset = Data(args.dataset)
         train_loader = DataLoader(train_dataset, batch_size=args.bs, \
             shuffle=True, num_workers=args.num_workers, drop_last=True, collate_fn=collate_fn)
 
-        val_dataset = Data(args.dataset, transforms, False)
+        val_dataset = Data(args.dataset, False)
         val_loader = DataLoader(val_dataset, batch_size=args.bs, \
             shuffle=False, num_workers=args.num_workers, drop_last=True, collate_fn=collate_fn)
 
-        criterion = nn.MSELoss().cuda()
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
         lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_drop)
 
@@ -235,7 +234,7 @@ def main(args):
 
         train_list, val_list = train(args.start_epoch, args.epoch, 
                                     train_loader, val_loader, model, device,
-                                    criterion, optimizer, lr_scheduler)
+                                    optimizer, lr_scheduler)
 
 if __name__ == "__main__":
     main(args)
