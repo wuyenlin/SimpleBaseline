@@ -7,7 +7,7 @@ def weight_init(m):
 
 
 class Linear(nn.Module):
-    def __init__(self, linear_size, p_dropout=0.5):
+    def __init__(self, linear_size, p_dropout=0):
         super().__init__()
         self.l_size = linear_size
 
@@ -40,7 +40,7 @@ class LinearModel(nn.Module):
     def __init__(self,
                  linear_size=1024,
                  num_stage=2,
-                 p_dropout=0.5):
+                 p_dropout=0):
         super().__init__()
 
         self.linear_size = linear_size
