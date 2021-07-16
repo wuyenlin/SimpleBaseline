@@ -1,5 +1,4 @@
 import numpy as np
-import cv2 as cv
 from common.misc import *
 
 
@@ -68,7 +67,7 @@ class Data:
         """
         Get 17 joints from the original 32 (Human3.6M)
         """
-        new_skel = np.zeros([17,3]) if kpts.shape[-1]==3 else np.zeros([17,2])
+        new_skel = np.zeros([17,3])
 
         keep = [0,1,2,3,6,7,8,12,13,14,15,17,18,19,25,26,27]
         for row in range(17):
@@ -80,6 +79,7 @@ class Data:
     def zero_center(self, cam) -> np.array:
         """translate root joint to origin (0,0,0)"""
         return cam - cam[2,:]
+
 
     def remap_h36m(self, h36m_joints):
         """
