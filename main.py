@@ -2,9 +2,9 @@
 
 from common.model import *
 from common.dataloader import *
+from common.loss import *
 from common.human import *
 from common.misc import *
-from common.loss import *
 
 import torch
 import argparse
@@ -47,7 +47,7 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer
         start_time = time()
         epoch_loss_3d_train = 0.0
         N = 0
-        if ep%5 == 0 and ep != 0:
+        if ep%50 == 0 and ep != 0:
             exp_name = "./checkpoint/simple_epoch_{}.bin".format(ep)
             torch.save({
                 "epoch": ep,
@@ -103,8 +103,8 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer
         print("[%d] time %.2f 3d_train %f 3d_valid %f" % (
                 ep + 1,
                 elapsed,
-                losses_3d_train[-1],
-                losses_3d_valid[-1]))
+                losses_3d_train[-1] * 1000,
+                losses_3d_valid[-1] * 1000))
 
     print("Finished Training.")
     return losses_3d_train , losses_3d_valid
@@ -116,25 +116,24 @@ def evaluate(test_loader, model, device):
 
     with torch.no_grad():
         N = 0
+        h = Human(1.8, "cpu")
+        human_model = h.update_pose()
+        t_info = vectorize(human_model)[:,:3]
         for data in test_loader:
             _, inputs_2d, inputs_3d = data
             inputs_2d = inputs_2d.to(device)
             inputs_3d = inputs_3d.to(device)
 
-            predicted_3d_pos = model(inputs_2d)
-            e0 = mpjpe(predicted_3d_pos, inputs_3d)
+            predicted_3d = model(inputs_2d)
+            e0 = mpjpe(predicted_3d, inputs_3d)
 
-# TODO: fix here
-            h = Human(1.8, "cpu")
-            model = h.update_pose()
-            t_info = vectorize(model)[:,:3]
-            pred = torch.zeros(predicted_3d_pos.size(0), 16, 9)
+            pred = torch.zeros(predicted_3d.size(0), 16, 9)
             tar = torch.zeros(inputs_3d.size(0), 16, 9)
             assert pred.shape == tar.shape
-            for pose in range(predicted_3d_pos.size(0)):
-                pred[pose,:,:] = torch.from_numpy(convert_gt(predicted_3d_pos[pose,:,:], t_info))
+            for pose in range(predicted_3d.size(0)):
+                pred[pose,:,:] = torch.from_numpy(convert_gt(predicted_3d[pose,:,:], t_info))
                 tar[pose,:,:] = torch.from_numpy(convert_gt(inputs_3d[pose,:,:], t_info))
-            n2 = mpbve(predicted_3d_pos, vec_3d, 0)
+            n2 = mpbve(pred, tar, 0)
             
             epoch_loss_e0 += inputs_3d.shape[0] * e0.item()
             epoch_loss_n2 += inputs_3d.shape[0] * n2.item()
@@ -156,7 +155,7 @@ def run_evaluation(model, actions=None):
     errors_n2 = []
     if actions is not None:
         # evaluting on h36m
-        model.load_state_dict(torch.load("./peltra/all_2_lay_epoch_15.bin")["model"])
+        model.load_state_dict(torch.load("./checkpoint/simple_epoch_150.bin")["model"])
         model = model.cuda()
         model.eval()
         for action in actions:
@@ -202,7 +201,7 @@ def main(args):
             shuffle=False, num_workers=args.num_workers, drop_last=True, collate_fn=collate_fn)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_drop)
+        lr_scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.96)
 
         if args.resume:
             checkpoint = torch.load(args.resume, map_location="cpu")
