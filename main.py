@@ -30,8 +30,7 @@ parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate app
 # dataset
 parser.add_argument("--num_workers", default=1, type=int)
 parser.add_argument("--eval", action="store_true")
-parser.add_argument("--export_training_curves", action="store_true", help="Save train/val curves in .png file")
-parser.add_argument("--dataset", type=str, default="./h36m/data_h36m_frame_all.npz")
+parser.add_argument("--dataset", type=str, default="./h36m/data_h36m_frame_all_pure.npz")
 parser.add_argument("--device", default="cuda", help="device used")
 parser.add_argument("--resume", type=str, default=None, help="Loading model checkpoint")
 
@@ -71,7 +70,7 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer
 
             loss = mpjpe(predicted_3d, inputs_3d)
             epoch_loss_3d_train += inputs_3d.shape[0] * loss.item()
-            N += inputs_2d.shape[0]
+            N += inputs_3d.shape[0]
 
             loss.backward()
 
@@ -104,24 +103,8 @@ def train(start_epoch, epoch, train_loader, val_loader, model, device, optimizer
         print("[%d] time %.2f 3d_train %f 3d_valid %f" % (
                 ep + 1,
                 elapsed,
-                losses_3d_train[-1] * 1000,
-                losses_3d_valid[-1] * 1000))
-
-        if args.export_training_curves and ep > 3:
-            import matplotlib.pyplot as plt
-            import matplotlib
-            matplotlib.use("Agg")
-            plt.figure()
-            epoch_x = np.arange(3, len(losses_3d_train)) + 1
-            plt.plot(epoch_x, losses_3d_train[3:], "--", color="C0")
-            plt.plot(epoch_x, losses_3d_valid[3:], color="C1")
-            plt.legend(["3d train", "3d valid (eval)"])
-            plt.ylabel("MPJPE (m)")
-            plt.xlabel("Epoch")
-            plt.xlim((3, epoch))
-            plt.savefig("./checkpoint/loss_3d.png")
-
-            plt.close("all")
+                losses_3d_train[-1],
+                losses_3d_valid[-1]))
 
     print("Finished Training.")
     return losses_3d_train , losses_3d_valid
@@ -141,6 +124,7 @@ def evaluate(test_loader, model, device):
             predicted_3d_pos = model(inputs_2d)
             e0 = mpjpe(predicted_3d_pos, inputs_3d)
 
+# TODO: fix here
             h = Human(1.8, "cpu")
             model = h.update_pose()
             t_info = vectorize(model)[:,:3]
@@ -176,7 +160,7 @@ def run_evaluation(model, actions=None):
         model = model.cuda()
         model.eval()
         for action in actions:
-            test_dataset = Data(args.dataset, transforms, False, action)
+            test_dataset = Data(args.dataset, False, action)
             test_loader = DataLoader(test_dataset, batch_size=512, drop_last=True, shuffle=False, \
                                     num_workers=args.num_workers, collate_fn=collate_fn)
             print("-----"+action+"-----")
