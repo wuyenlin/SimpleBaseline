@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from common.human import *
 
 
 def collate_fn(batch):
@@ -7,28 +8,38 @@ def collate_fn(batch):
     return torch.utils.data.dataloader.default_collate(batch)
 
 
+def get_rot_from_vecs(vec1: np.array, vec2: np.array) -> np.array:
+    """ 
+    Find the rotation matrix that aligns vec1 to vec2
+    :param vec1: A 3d "source" vector
+    :param vec2: A 3d "destination" vector
 
-def vectorize(gt_3d) -> torch.tensor:
+    :return R: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+    
+    Such that vec2 = R @ vec1
     """
-    process gt_3d (17,3) into a (16,4) that contains bone vector and length
-    :return bone_info: [unit bone vector (,3) + bone length (,1)]
+    a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    s = np.linalg.norm(v)
+    kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    R = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    return R
+
+
+def convert_gt(gt_3d: np.array, t_info) -> np.array:
     """
-    indices = (
-        (0,7), (7,8), (8,9), (9,10),  # spine + head
-        (8,11), (11,12), (12,13), 
-        (8,14), (14,15), (15,16), # arms
-        (0,4), (4,5), (5,6),
-        (0,1), (1,2), (2,3), # legs
-    )
+    Compare GT3D kpts with T pose and obtain 16 rotation matrices
 
-    num_bones = len(indices)
-    gt_3d_tensor = gt_3d if torch.is_tensor(gt_3d) \
-                    else torch.from_numpy(gt_3d)
+    :return R_stack: a (16,9) arrays with flattened rotation matrix for 16 bones
+    """
+    # process GT
+    bone_info = vectorize(gt_3d)[:,:3] # (16,3) bone vecs
 
-    bone_info = torch.zeros([num_bones, 4], requires_grad=False) # (16, 4)
-    for i in range(num_bones):
-        vec = gt_3d_tensor[indices[i][1],:] - gt_3d_tensor[indices[i][0],:]
-        vec_len = torch.linalg.norm(vec)
-        unit_vec = vec/vec_len
-        bone_info[i,:3], bone_info[i,3] = unit_vec, vec_len
-    return bone_info
+    num_row = bone_info.shape[0]
+    R_stack = np.zeros([num_row, 9])
+    # get rotation matrix for each bone
+    for k in range(num_row):
+        R = get_rot_from_vecs(t_info[k,:], bone_info[k,:]).flatten()
+        R_stack[k,:] = R
+    return R_stack
