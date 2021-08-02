@@ -144,7 +144,7 @@ def evaluate(test_loader, model, device):
             N += inputs_3d.shape[0]
 
             e0 = (epoch_loss_e0 / N)*1000
-            n1= (epoch_loss_n1 / N)*1000
+            n1= (epoch_loss_n1 / N)
             n2 = (epoch_loss_n2 / N)*1000
 
     print("Mean Per Joint Position Error (MPJPE):\t", e0, "\t(mm)")
